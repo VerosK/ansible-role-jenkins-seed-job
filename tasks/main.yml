@@ -1,0 +1,66 @@
+- name: "Check prerequisites"
+  fail:
+    msg: jenkins_seed_git_repo should be defined
+  when: not jenkins_seed_git_repo
+
+- name: Install git
+  action: '{{ ansible_pkg_mgr }}'
+  args:
+    name: git
+    state: present
+
+- name: "Create .ssh dir"
+  file:
+    dest: '{{ jenkins_home }}/.ssh'
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: 0700
+
+- name: Upload ssh private key
+  copy:
+    content: '{{jenkins_ssh_private_key}}'
+    dest: '{{ jenkins_home }}/.ssh/id_rsa'
+    owner: jenkins
+    group: jenkins
+    mode: 0700
+  when: jenkins_ssh_private_key is defined
+
+- name: Upload ssh publickey
+  copy:
+    content: '{{jenkins_ssh_public_key}}'
+    dest: '{{ jenkins_home }}/.ssh/id_rsa.pub'
+    owner: jenkins
+    group: jenkins
+    mode: 0700
+  when: jenkins_ssh_public_key is defined
+
+- name: Upload seed job to Jenkins init.d directory
+  template:
+    src: setup-seed-job.groovy
+    dest: '{{ jenkins_home }}/init.groovy.d/{{ jenkins_seed_priority }}-setup-seed-job.groovy'
+  notify: restart jenkins
+  # https://wiki.jenkins-ci.org/display/JENKINS/Groovy+Hook+Script
+
+- name: Create known_hosts file
+  copy:
+    content: ''
+    dest: '/etc/ssh/ssh_known_hosts'
+    mode: 0744
+    force: no
+
+- name: Make sure known_hosts file is readable
+  file:
+    dest: '/etc/ssh/ssh_known_hosts'
+    mode: 0744
+
+- name: Add known hosts to jenkins
+  known_hosts:
+    path: /etc/ssh/ssh_known_hosts
+    state: present
+    host: '{{ item.key }}'
+    key: "{{ item.value }}"
+  with_dict: '{{ jenkins_add_ssh_hosts }}'
+
+
+- meta: flush_handlers
